@@ -17,7 +17,7 @@
  * and auth are handled internally via the OAuth-issued api_key.
  */
 
-import type { ExtensionAPI, ProviderModelConfig } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ModelRegistry, ProviderModelConfig } from '@earendil-works/pi-coding-agent';
 import type {
     Api,
     Model,
@@ -34,7 +34,7 @@ import {
     FALLBACK_MODELS,
     DEFAULT_HOST,
 } from '../src/models.js';
-import { clearCachedCatalog, getCachedCatalog } from '../src/cloud-direct/catalog.js';
+import { clearCachedCatalog, getCachedCatalog, isCatalogStale } from '../src/cloud-direct/catalog.js';
 import { getApiServerUrlForKey, setApiServerUrlForKey } from '../src/hosts.js';
 import { DEFAULT_REGION } from '../src/oauth/types.js';
 
@@ -45,6 +45,40 @@ const API_IDENTIFIER = 'devin-cloud';
 // pi requires baseUrl when models are defined, even with streamSimple.
 // streamSimple ignores this — it routes internally — but the field must be present.
 const PLACEHOLDER_BASE_URL = DEFAULT_HOST;
+
+/**
+ * How often the background timer re-checks the catalog while a session is
+ * open. Combined with the `session_start` / `agent_settled` triggers this
+ * keeps the picker current without any manual `/devin-refresh`.
+ */
+const AUTO_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
+ * Best-effort background catalog refresh — the "always latest" path.
+ *
+ * Skips everything when there is no Devin credential, and skips the
+ * registry round-trip when the cached catalog is still inside its TTL
+ * (unless `force` is set). A successful refresh flows through the normal
+ * `refreshModels` path, so the new list is persisted via
+ * `context.publish({ persist })` exactly like a manual refresh.
+ *
+ * Never throws: a failed fetch leaves the persisted/stale catalog in
+ * place and chat keeps working on the last-known list.
+ */
+async function autoRefreshDevinCatalog(
+    registry: ModelRegistry,
+    force = false,
+): Promise<void> {
+    try {
+        const apiKey = await registry.getApiKeyForProvider(PROVIDER_ID);
+        if (!apiKey) return;
+        const host = getApiServerUrlForKey(apiKey, DEFAULT_HOST);
+        if (!force && !isCatalogStale(apiKey, host)) return;
+        await registry.refresh({ providers: [PROVIDER_ID], force });
+    } catch {
+        // best-effort — see header
+    }
+}
 
 /**
  * The `refreshModels` implementation (pi ≥0.85 dynamic-catalog hook).
@@ -183,6 +217,38 @@ export default async function (pi: ExtensionAPI): Promise<void> {
                 .filter((m) => m.provider === PROVIDER_ID).length;
             ctx.ui.notify(`Devin: refreshed ${count} models.`, 'info');
         },
+    });
+
+    // --- Always-fresh catalog ----------------------------------------------
+    // pi itself calls refreshModels at startup and right after login. These
+    // hooks keep the list current for the rest of the session's life:
+    //   session_start  — covers new / resume / fork (pi's own startup
+    //                    refresh doesn't re-run on those)
+    //   agent_settled  — after every run; fetches only when the catalog is
+    //                    past its TTL, so a new Cognition model appears in
+    //                    the picker without a manual refresh
+    //   interval       — catches long idle sessions (picker opened without
+    //                    chatting); unref'd so it can't hold the process open
+    let autoRefreshTimer: ReturnType<typeof setInterval> | undefined;
+
+    pi.on('session_start', (_event, ctx) => {
+        void autoRefreshDevinCatalog(ctx.modelRegistry);
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = setInterval(() => {
+            void autoRefreshDevinCatalog(ctx.modelRegistry);
+        }, AUTO_REFRESH_INTERVAL_MS);
+        autoRefreshTimer.unref();
+    });
+
+    pi.on('session_shutdown', () => {
+        if (autoRefreshTimer) {
+            clearInterval(autoRefreshTimer);
+            autoRefreshTimer = undefined;
+        }
+    });
+
+    pi.on('agent_settled', (_event, ctx) => {
+        void autoRefreshDevinCatalog(ctx.modelRegistry);
     });
 
     pi.registerCommand('devin-status', {

@@ -211,6 +211,16 @@ export async function getCachedCatalog(
 }
 
 /**
+ * True when the catalog for `(apiKey, host)` is missing or past its TTL —
+ * i.e. the next `getCachedCatalog` call would hit the network. Lets
+ * background auto-refresh paths skip no-op registry refreshes entirely.
+ */
+export function isCatalogStale(apiKey: string, host: string): boolean {
+  if (!cached || cached.apiKey !== apiKey || cached.host !== host) return true;
+  return Date.now() - cached.fetchedAt >= CATALOG_TTL_MS;
+}
+
+/**
  * Drop the cached catalog. Call after logout/account switch so a fresh
  * sign-in doesn't see a previous account's allow-list.
  */

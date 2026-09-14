@@ -73,7 +73,9 @@ The extension reuses the battle-tested cloud-direct gRPC layer from [opencode-wi
 
 ## Models
 
-Models are fetched dynamically from Cognition's `GetCascadeModelConfigs` RPC via the `refreshModels` provider hook — at startup, after login, and on `/devin-refresh`. The catalog is persisted to pi's models store, so an offline start still shows the last-known list. A static fallback set is included for when nothing has been persisted yet.
+Models are fetched dynamically from Cognition's `GetCascadeModelConfigs` RPC via the `refreshModels` provider hook — at startup, after login, and on `/devin-refresh`. On top of that the extension keeps the list fresh **automatically**: it re-checks the catalog on every `session_start` (new / resume / fork), after each agent run (`agent_settled`), and on a 15-minute timer while a session is open. Checks that find a still-fresh cache (<10 min TTL) skip the network entirely, so a newly released Cognition model shows up in the picker on its own.
+
+The catalog is persisted to pi's models store, so an offline start still shows the last-known list. A static fallback set is included for when nothing has been persisted yet.
 
 The live catalog is **authoritative**: every enabled entry is surfaced as a chat model, including new families the extension has never seen (the server marks models your tier can't run as `disabled`, so no client-side allow-list is needed). Only a small blocklist of known non-chat utilities (`swe-check`, `swe-grep`, `swe-1-mini`, `fast-context`) is filtered out — see `EXCLUDED_PREFIXES` in `src/models.ts`.
 
