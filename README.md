@@ -1,8 +1,22 @@
 # pi-devin-connector
 
+[![npm version](https://img.shields.io/npm/v/pi-devin-connector)](https://www.npmjs.com/package/pi-devin-connector)
+[![npm downloads](https://img.shields.io/npm/dm/pi-devin-connector)](https://www.npmjs.com/package/pi-devin-connector)
+[![license](https://img.shields.io/npm/l/pi-devin-connector)](https://github.com/ozekimasaki/pi-devin-connector/blob/main/LICENSE)
+[![node](https://img.shields.io/node/v/pi-devin-connector)](https://nodejs.org)
+[![pi package](https://img.shields.io/badge/pi-package-blue)](https://pi.dev/packages)
+
 A [pi](https://pi.dev) coding agent extension that adds the **Devin** (Cognition / Windsurf) provider with browser-based OAuth login and native streaming.
 
 > Fork of [`pi-devin-auth`](https://www.npmjs.com/package/pi-devin-auth) (nmzpy), updated for the pi ≥0.85 extension spec: the `refreshModels` dynamic-catalog hook, the `onPayload`/`onResponse`/`fetch`/`headers`/`timeoutMs` stream options, and the current OAuth callback surface.
+
+## Features
+
+- **OAuth login** — `/login devin` opens Windsurf sign-in; the token is exchanged for a long-lived Devin API key
+- **Always-fresh model catalog** — every model enabled on your account is surfaced automatically (SWE-2, Claude Opus 5, GPT-6 Astra, Gemini 3.x, GLM-5.3, Kimi K3, DeepSeek V4, Grok 4.6, ...), with auto-refresh on session start, after each agent run, and on a 15-minute timer
+- **Native streaming** — `streamSimple` implementation over Cognition's Connect-RPC (`GetChatMessage`): text, thinking, tool calls, usage & cost accounting
+- **Tier-aware errors** — pre-flight catalog check turns Cognition's opaque `permission_denied` into a readable "not enabled on your plan" message
+- **Multi-tenant** — honors the `api_server_url` returned at login (EU / FedStart tenants route correctly)
 
 ## Install
 
@@ -10,12 +24,6 @@ A [pi](https://pi.dev) coding agent extension that adds the **Devin** (Cognition
 
 ```bash
 pi install npm:pi-devin-connector
-```
-
-Then enable the extension:
-
-```bash
-pi config
 ```
 
 ### Manual / local dev
@@ -41,7 +49,7 @@ Right after login, pi refreshes the provider's model catalog automatically, so t
 ### Select a model
 
 ```
-/model devin/swe-1-7
+/model devin/swe-2-high
 ```
 
 ### Refresh the catalog manually
@@ -80,6 +88,16 @@ The catalog is persisted to pi's models store, so an offline start still shows t
 The live catalog is **authoritative**: every enabled entry is surfaced as a chat model, including new families the extension has never seen (the server marks models your tier can't run as `disabled`, so no client-side allow-list is needed). Only a small blocklist of known non-chat utilities (`swe-check`, `swe-grep`, `swe-1-mini`, `fast-context`) is filtered out — see `EXCLUDED_PREFIXES` in `src/models.ts`.
 
 Per-model context windows and pricing come from the `MODEL_META` prefix overlay, synced to the official table at <https://docs.devin.ai/windsurf/plugins/cascade/models>. `-priority` / `-fast` variants are billed at 2x family rates; `-none` variants are flagged non-reasoning. Unrecognized UIDs get conservative defaults so they're still usable.
+
+## Development
+
+```bash
+npm install
+npm run typecheck   # tsc --noEmit
+npm test            # node --test --import tsx tests/stream.test.ts
+```
+
+Requires Node ≥22.19 (pi's own floor). pi loads the extension via jiti — no build step needed.
 
 ## License
 
