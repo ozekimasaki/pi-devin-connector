@@ -22,7 +22,7 @@ src/cloud-direct/            # gRPC to server.codeium.com
 src/context-map.ts           # pi Message[]/Tool[] -> ChatHistoryItem[]/ToolDef[]
 src/hosts.ts                 # api_key -> tenant api_server_url lookup (login + refreshModels populate)
 src/stream.ts                # streamDevin: streamSimple impl (CloudChatEvent -> pi events)
-src/models.ts                # dynamic catalog -> ProviderModelConfig[] + fallback + stored-model conversion
+src/models.ts                # dynamic catalog -> ProviderModelConfig[] (blocklist policy) + fallback + stored-model conversion
 ```
 
 ## Build & Test
@@ -43,6 +43,7 @@ pi loads extensions via jiti (no build step needed for runtime use). Requires No
 4. **Non-expiring token shape**: Windsurf's `RegisterUser` returns a long-lived `api_key` with no refresh token. We set `OAuthCredentials = { refresh: "", access: apiKey, expires: now + 365 days, apiServerUrl, accountName }`. `refreshToken(credentials, signal)` is a no-op. Extra fields ride on the `OAuthCredentials` index signature.
 5. **Tenant URL routing**: `RegisterUser`'s `api_server_url` is stashed on the credential and in a process-local `apiKey → host` map (`src/hosts.ts`) so `streamDevin` — which only receives the resolved key — still hits the right tenant.
 6. **In-memory JWT cache only**: No disk persistence for the short-lived `user_jwt`. Re-mint cost (~200ms) is negligible.
+7. **Catalog is authoritative, blocklist only**: The upstream package whitelisted 11 model families (`WANTED_PREFIXES`), which silently dropped every new family Cognition shipped (swe-2, opus-5, gpt-6-astra, ...). Since `GetCascadeModelConfigs` already scopes results to the account (`disabled` flag = entitlement), `buildLiveModels` now includes every enabled entry except `EXCLUDED_PREFIXES` (`swe-check`, `swe-grep`, `swe-1-mini`, `fast-context` — non-chat utilities). Pricing/context comes from `MODEL_META` (longest-prefix match, synced to docs.devin.ai/windsurf/plugins/cascade/models): `-priority`/`-fast` UIDs bill at 2x family rates, `-none` UIDs are `reasoning: false`, unknown UIDs fall back to `DEFAULT_META`.
 
 ## Token Shapes
 

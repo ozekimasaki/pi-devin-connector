@@ -75,6 +75,10 @@ The extension reuses the battle-tested cloud-direct gRPC layer from [opencode-wi
 
 Models are fetched dynamically from Cognition's `GetCascadeModelConfigs` RPC via the `refreshModels` provider hook — at startup, after login, and on `/devin-refresh`. The catalog is persisted to pi's models store, so an offline start still shows the last-known list. A static fallback set is included for when nothing has been persisted yet.
 
+The live catalog is **authoritative**: every enabled entry is surfaced as a chat model, including new families the extension has never seen (the server marks models your tier can't run as `disabled`, so no client-side allow-list is needed). Only a small blocklist of known non-chat utilities (`swe-check`, `swe-grep`, `swe-1-mini`, `fast-context`) is filtered out — see `EXCLUDED_PREFIXES` in `src/models.ts`.
+
+Per-model context windows and pricing come from the `MODEL_META` prefix overlay, synced to the official table at <https://docs.devin.ai/windsurf/plugins/cascade/models>. `-priority` / `-fast` variants are billed at 2x family rates; `-none` variants are flagged non-reasoning. Unrecognized UIDs get conservative defaults so they're still usable.
+
 ## License
 
 MIT — original work © 2026 nmzpy, modifications © 2026 Masaki Ozeki.

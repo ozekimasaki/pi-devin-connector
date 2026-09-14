@@ -144,22 +144,42 @@ function catalogOf(entries: Array<[string, string, boolean]>): CacheEntry {
 }
 
 describe('buildLiveModels', () => {
-    it('filters wanted prefixes and skips disabled entries', () => {
+    it('includes unknown families, skips disabled and non-chat entries', () => {
         const models = buildLiveModels(catalogOf([
-            ['swe-1-7', 'SWE 1.7', false],
-            ['swe-1-7-lightning', 'SWE Lightning', false],
-            ['claude-opus-4-8', 'Opus', true],      // disabled — dropped
-            ['some-old-model', 'Old', false],        // not wanted — dropped
+            ['swe-2-high', 'SWE-2 High', false],
+            ['swe-2-max', 'SWE-2 Max', false],
+            ['claude-opus-4-8', 'Opus', true],       // disabled — dropped
+            ['swe-check', 'SWE-check', false],        // non-chat tool — dropped
+            ['swe-grep', 'swe-grep', false],          // non-chat tool — dropped
+            ['future-model-9-turbo', 'Future 9', false], // unknown family — kept
         ]));
-        assert.deepEqual(models.map((m) => m.id), ['swe-1-7', 'swe-1-7-lightning']);
-        assert.equal(models[1].cost.output, 12.5); // inherits specific meta
+        assert.deepEqual(
+            models.map((m) => m.id),
+            ['swe-2-high', 'swe-2-max', 'future-model-9-turbo'],
+        );
+        assert.equal(models[0].cost.output, 3.75);   // swe-2 family meta
+        assert.equal(models[2].cost.output, 0);      // DEFAULT_META fallback
     });
 
-    it('falls back to FALLBACK_MODELS on empty/mismatched catalogs', () => {
+    it('doubles cost for -priority/-fast variants and marks -none non-reasoning', () => {
+        const models = buildLiveModels(catalogOf([
+            ['gpt-5-6-sol-medium', 'Sol Medium', false],
+            ['gpt-5-6-sol-medium-priority', 'Sol Medium Fast', false],
+            ['gpt-5-6-luna-none', 'Luna None', false],
+        ]));
+        const [base, fast, none] = models;
+        assert.equal(base.cost.input, 4);
+        assert.equal(fast.cost.input, 8);            // 2x priority tier
+        assert.equal(fast.cost.output, 40);
+        assert.equal(none.reasoning, false);
+        assert.equal(base.reasoning, true);
+    });
+
+    it('falls back to FALLBACK_MODELS on empty catalogs', () => {
         assert.equal(buildLiveModels(null), FALLBACK_MODELS);
         assert.equal(buildLiveModels(catalogOf([])), FALLBACK_MODELS);
         assert.equal(
-            buildLiveModels(catalogOf([['unknown-uid', 'X', false]])),
+            buildLiveModels(catalogOf([['swe-check', 'X', false]])),
             FALLBACK_MODELS,
         );
     });
